@@ -32,6 +32,71 @@ from utils.database import (
 
 # ============================================
 # 页面配置
+
+# ============================================
+# 运行模式与数据存储（本地持久化 / 线上会话存储）
+# ============================================
+
+def is_local_mode():
+    """
+    判断是否为本地模式。
+    本地模式：.env中设置 APP_ENV=local，数据存入SQLite数据库，持久化保存。
+    线上模式：未设置该环境变量，数据仅存session_state，应用重启后清除。
+    """
+    return os.getenv("APP_ENV", "").lower() == "local"
+
+
+def _get_session_tasks():
+    """获取当前会话中的任务列表（线上模式用）"""
+    if "session_tasks" not in st.session_state:
+        st.session_state.session_tasks = []
+    return st.session_state.session_tasks
+
+
+def save_task_to_session(jd_name, jd_text, candidates):
+    """将筛选结果保存到当前会话（线上模式用）"""
+    import time
+    task_id = int(time.time() * 1000)
+    task = {
+        "id": task_id,
+        "jd_name": jd_name,
+        "jd_text": jd_text,
+        "candidates": candidates,
+        "resume_count": len(candidates),
+        "success_count": len([c for c in candidates if c.get("status") != "解析失败"]),
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    tasks = _get_session_tasks()
+    tasks.insert(0, task)
+    return task_id
+
+
+def get_session_task_list():
+    """获取当前会话的任务列表（线上模式用）"""
+    return _get_session_tasks()
+
+
+def get_session_task_detail(task_id):
+    """获取当前会话中指定任务的详情（线上模式用）"""
+    tasks = _get_session_tasks()
+    for task in tasks:
+        if task["id"] == task_id:
+            return task
+    return None
+
+
+def delete_session_task(task_id):
+    """删除当前会话中的指定任务（线上模式用）"""
+    tasks = _get_session_tasks()
+    st.session_state.session_tasks = [t for t in tasks if t["id"] != task_id]
+    return True
+
+
+def clear_all_session_tasks():
+    """清空当前会话中的所有任务（线上模式用）"""
+    st.session_state.session_tasks = []
+    return True
+
 # ============================================
 st.set_page_config(
     page_title="候选人初筛助手",
@@ -1119,20 +1184,29 @@ def run_screening(jd_file, resume_files, selected_template=None):
                 resume_list=resume_list
             )
 
-        # 保存历史记录
+        # 保存结果（本地模式存数据库，线上模式存session）
         task_id = None
         try:
-            task_id = save_screening_result(jd_name, jd_text, result["candidates"])
-            st.success(f"💾 结果已保存到历史记录（任务 ID: {task_id}）")
-
-            # 重新从数据库读取，带上候选人ID，支持编辑
-            from utils.database import get_task_detail
-            detail = get_task_detail(task_id)
-            if detail:
-                result["candidates"] = detail["candidates"]
-                result["task_id"] = task_id
+            if is_local_mode():
+                # 本地模式：存入SQLite数据库，持久化
+                task_id = save_screening_result(jd_name, jd_text, result["candidates"])
+                st.success(f"💾 结果已保存到本地数据库（任务ID: {task_id}）")
+                from utils.database import get_task_detail
+                detail = get_task_detail(task_id)
+                if detail:
+                    result["candidates"] = detail["candidates"]
+                    result["task_id"] = task_id
+            else:
+                # 线上模式：存入当前会话，应用重启后清除
+                task_id = save_task_to_session(jd_name, jd_text, result["candidates"])
+                st.success(f"💾 结果已保存到当前会话（任务ID: {task_id}）")
+                st.info("ℹ️ 提示：线上环境下数据仅保存在当前浏览器会话，应用重启后将被清除，请及时导出数据。")
+                detail = get_session_task_detail(task_id)
+                if detail:
+                    result["candidates"] = detail["candidates"]
+                    result["task_id"] = task_id
         except Exception as e:
-            st.warning(f"⚠️ 保存历史记录失败: {str(e)}")
+            st.warning(f"⚠️ 保存结果失败: {str(e)}")
 
         # 显示结果
         show_results(result)
@@ -1184,22 +1258,10 @@ def show_results(result):
     with col_filter:
         # 状态筛选
         filter_status = st.selectbox(
-            "按状态筛选",
-            options=["全部", "待评估", "优先查看", "约面", "待定", "淘汰"],
-            key="filter_status_result"
+            '按状态筛选',
+            options=['全部', '待评估', '优先查看', '约面', '待定', '淘汰'],
+            key='filter_status_result'
         )
-
-    with col_export:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("📊 导出 Excel", type="secondary", use_container_width=True):
-            export_path = export_candidates_to_excel(result["candidates"])
-            with open(export_path, "rb") as f:
-                st.download_button(
-                    "⬇️ 下载对比表",
-                    f.read(),
-                    file_name=os.path.basename(export_path),
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
 
     # 应用筛选
     filtered_candidates = result["candidates"]
@@ -1803,14 +1865,19 @@ def render_candidate_cards(candidates, editable=True, show_checkboxes=False, che
 # 历史记录标签页
 # ============================================
 def show_history_tab():
-    """显示历史记录标签页"""
-    st.markdown("#### 📚 历史筛选记录")
+    """鏄剧ず鍘嗗彶璁板綍鏍囩鍙?"""
+    # 鏍规嵁杩愯妯″紡閫夋嫨鏁版嵁婧?
+    if is_local_mode():
+        st.markdown("#### 鍘嗗彶绛涢€夎褰?锛堟湰鍦版寔涔鍖栵級")
+        tasks = get_task_list()
+    else:
+        st.markdown("#### 褰撳墠浼氳瘽璁板綍锛堢嚎涓婁复鏃讹級")
+        st.info("鈿?绾夸笂鐜澧冧笅锛屾暟鎹粎淇瓨鍦ㄥ綋鍓嶆祻瑙堝櫒浼氳瘽涓紝搴旂敤閲嶅惎鍚庡皢琚竻闄ゃ€傚缓璁鍙婃椂鍊嚭Excel淇瓨銆?")
+        tasks = get_session_task_list()
 
-    # 初始化 session_state
+    # 鍒濆鍖?session_state
     if 'viewing_task_id' not in st.session_state:
         st.session_state.viewing_task_id = None
-
-    tasks = get_task_list()
 
     if not tasks:
         st.info("暂无历史记录，去「开始筛选」标签页创建第一条吧！")
@@ -1832,9 +1899,13 @@ def show_history_tab():
     # 清空按钮
     col1, col2 = st.columns([1, 5])
     with col1:
-        if st.button("🗑️ 清空全部历史", type="secondary"):
-            if clear_all_history():
-                st.success("✅ 已清空全部历史记录")
+        if st.button("🗑️ 清空全部记录", type="secondary"):
+            if is_local_mode():
+                ok = clear_all_history()
+            else:
+                ok = clear_all_session_tasks()
+            if ok:
+                st.success("✅ 已清空全部记录")
                 st.session_state.viewing_task_id = None
                 st.rerun()
             else:
@@ -1870,7 +1941,11 @@ def show_history_tab():
                 st.rerun()
 
             if del_btn:
-                if delete_task(task["id"]):
+                if is_local_mode():
+                    ok = delete_task(task["id"])
+                else:
+                    ok = delete_session_task(task["id"])
+                if ok:
                     if st.session_state.viewing_task_id == task["id"]:
                         st.session_state.viewing_task_id = None
                     st.success(f"✅ 已删除任务 {task['id']}")
@@ -1880,7 +1955,10 @@ def show_history_tab():
 
             # 如果当前正在查看这个任务，显示详情
             if st.session_state.viewing_task_id == task["id"]:
-                detail = get_task_detail(task["id"])
+                if is_local_mode():
+                    detail = get_task_detail(task["id"])
+                else:
+                    detail = get_session_task_detail(task["id"])
                 if detail:
                     st.markdown("---")
 
@@ -1914,14 +1992,6 @@ def show_history_tab():
                                     key=f"download_{task['id']}",
                                     use_container_width=True
                                 )
-
-                    # 应用筛选
-                    filtered_candidates = detail["candidates"]
-                    if filter_status != "全部":
-                        filtered_candidates = [
-                            c for c in filtered_candidates
-                            if c.get("status", "") == filter_status
-                        ]
 
                     st.markdown("**📝 JD 内容**")
                     jd_content = detail.get("jd_content", "无")
@@ -1962,15 +2032,6 @@ def show_templates_tab():
     with col2:
         builtin_count = len([t for t in templates if t['is_builtin']])
         st.metric("内置模板", builtin_count)
-    with col3:
-        custom_count = len([t for t in templates if not t['is_builtin']])
-        st.metric("自定义模板", custom_count)
-
-    st.markdown("---")
-
-    # 新增模板按钮
-    col1, col2 = st.columns([1, 5])
-    with col1:
         add_btn = st.button("➕ 新增模板", type="primary", use_container_width=True)
 
     if add_btn:
