@@ -2039,16 +2039,26 @@ if __name__ == "__main__":
     import sys
     import os
 
-    # 判断是否已经在Streamlit环境中
-    # Streamlit Cloud / streamlit run 会设置这些环境变量
-    in_streamlit = (
-        os.environ.get("STREAMLIT_LAUNCHED") == "1"
-        or os.environ.get("STREAMLIT_SERVER_PORT") is not None
-        or os.environ.get("IS_STREAMLIT") == "1"
-    )
+    def _is_running_in_streamlit():
+        """检测当前是否在Streamlit运行时环境中"""
+        # 1. 环境变量检测
+        if os.environ.get("STREAMLIT_LAUNCHED") == "1":
+            return True
+        if os.environ.get("STREAMLIT_SERVER_HEADLESS") is not None:
+            return True
+        if os.environ.get("STREAMLIT_SERVER_PORT") is not None:
+            return True
+        # 2. 运行时上下文检测（最可靠）
+        try:
+            from streamlit.runtime.scriptrunner import get_script_run_ctx
+            if get_script_run_ctx() is not None:
+                return True
+        except Exception:
+            pass
+        return False
 
-    if in_streamlit:
-        # 已经在Streamlit环境中，直接运行主程序
+    if _is_running_in_streamlit():
+        # 已经在Streamlit环境中（包括Streamlit Cloud），直接运行主程序
         main()
     else:
         # 本地直接运行 python app.py，自动启动streamlit
@@ -2064,7 +2074,6 @@ if __name__ == "__main__":
         print("=" * 50)
         print()
 
-        # 设置环境变量，防止递归
         env = os.environ.copy()
         env["STREAMLIT_LAUNCHED"] = "1"
 
