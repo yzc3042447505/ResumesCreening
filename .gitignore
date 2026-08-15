@@ -1,12 +1,46 @@
-# 虚拟环境
-venv/
-.venv/
+# 环境变量（含API密钥，绝对不能提交）
+.env
 
 # Python缓存
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# 虚拟环境
+venv/
+.venv/
+
+# Streamlit
+.streamlit/
+
+# 数据库（含用户数据，绝对不能提交）
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 临时文件
+temp_uploads/
+temp_exports/
+*.tmp
+
+# 简历文件（敏感个人信息，不提交）
+assets/sample_resumes/
+*.pdf
+*.docx
+*.doc
+
+# Excel导出文件
+*.xlsx
+*.xls
+*.csv
+
+# 图片文件
+*.png
+*.jpg
+*.jpeg
+*.gif
 
 # IDE
 .vscode/
@@ -15,3 +49,7 @@ __pycache__/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 项目文档（可选，如需提交可注释掉）
+项目讲解文档.docx
+项目介绍文档.docx

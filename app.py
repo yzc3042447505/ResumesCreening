@@ -1993,6 +1993,14 @@ def show_history_tab():
                                     use_container_width=True
                                 )
 
+                    # 应用筛选
+                    filtered_candidates = detail['candidates']
+                    if filter_status != '全部':
+                        filtered_candidates = [
+                            c for c in filtered_candidates
+                            if c.get('status', '') == filter_status
+                        ]
+
                     st.markdown("**📝 JD 内容**")
                     jd_content = detail.get("jd_content", "无")
                     if len(jd_content) > 500:
