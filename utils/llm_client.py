@@ -46,7 +46,36 @@ class LLMClient:
         }
 
         if not self.api_key or self.api_key == "你的API密钥":
-            print("⚠️  警告：请在 .env 文件中配置你的 LLM_API_KEY")
+            print("⚠️  警告：未配置LLM_API_KEY，请在界面中输入或在.env文件中配置")
+
+    def configure(self, api_key: str, base_url: str = None, model: str = None):
+        """
+        动态配置大模型API参数（用于用户在界面中输入自己的API）
+
+        参数:
+            api_key: API密钥
+            base_url: API地址（兼容OpenAI格式），不传则保持原有值
+            model: 模型名称，不传则保持原有值
+        """
+        if api_key:
+            self.api_key = api_key
+        if base_url:
+            self.base_url = base_url.rstrip('/')
+        if model:
+            self.model = model
+
+        # 更新端点和请求头
+        self.api_endpoint = f"{self.base_url}/chat/completions"
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+    def is_configured(self) -> bool:
+        """
+        检查是否已配置有效的API密钥
+        """
+        return bool(self.api_key) and self.api_key != "你的API密钥"
 
     def call(self, prompt: str, system_prompt: str = "你是一个专业的助手",
              temperature: float = 0.7, max_tokens: int = 4096) -> str:

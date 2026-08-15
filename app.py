@@ -20,6 +20,7 @@ if current_dir not in sys.path:
 from core.pipeline import ScreeningPipeline
 from utils.file_loader import extract_text_from_file, get_file_name
 from utils.data_exporter import export_candidates_to_excel
+from utils.llm_client import llm_client
 from utils.database import (
     save_screening_result,
     get_task_list,
@@ -792,6 +793,91 @@ def show_screening_tab():
     """显示筛选标签页"""
     # 侧边栏：上传区
     with st.sidebar:
+        # ========== API配置区域 ==========
+        st.markdown("### ⚙️ API配置")
+        st.markdown("---")
+
+        if not llm_client.is_configured():
+            st.warning("请先配置大模型API密钥")
+
+            # 预设服务商
+            providers = {
+                "火山方舟（豆包）": {
+                    "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+                    "model": "doubao-seed-2.1-pro",
+                    "help": "在火山方舟控制台创建API Key，模型填写接入点ID（ep-开头）或模型名称"
+                },
+                "DeepSeek": {
+                    "base_url": "https://api.deepseek.com/v1",
+                    "model": "deepseek-chat",
+                    "help": "在platform.deepseek.com申请API Key"
+                },
+                "OpenAI": {
+                    "base_url": "https://api.openai.com/v1",
+                    "model": "gpt-4o-mini",
+                    "help": "在platform.openai.com申请API Key"
+                },
+                "自定义（兼容OpenAI格式）": {
+                    "base_url": "https://api.example.com/v1",
+                    "model": "your-model-name",
+                    "help": "任何兼容OpenAI Chat Completions格式的API服务"
+                }
+            }
+
+            provider_names = list(providers.keys())
+            selected_provider = st.selectbox(
+                "选择API服务商",
+                options=provider_names,
+                key="api_provider",
+                help="选择你的大模型API服务商"
+            )
+
+            default_config = providers[selected_provider]
+
+            api_key = st.text_input(
+                "API Key",
+                type="password",
+                key="api_key_input",
+                help=default_config["help"]
+            )
+
+            base_url = st.text_input(
+                "API Base URL",
+                value=default_config["base_url"],
+                key="api_base_url",
+                help="兼容OpenAI格式的API地址"
+            )
+
+            model = st.text_input(
+                "模型名称",
+                value=default_config["model"],
+                key="api_model",
+                help="填写要使用的模型名称或接入点ID"
+            )
+
+            if st.button("✅ 保存配置", type="primary", use_container_width=True):
+                if api_key:
+                    llm_client.configure(api_key=api_key, base_url=base_url, model=model)
+                    st.session_state["api_configured"] = True
+                    st.success("配置成功！可以开始使用了")
+                    st.rerun()
+                else:
+                    st.error("请输入API Key")
+
+            st.markdown("---")
+        else:
+            st.success("✅ API已配置")
+            st.caption(f"模型: {llm_client.model}")
+            if st.button("重新配置", use_container_width=True):
+                # 重置配置
+                llm_client.api_key = ""
+                llm_client.headers["Authorization"] = "Bearer "
+                st.session_state["api_configured"] = False
+                st.rerun()
+            st.markdown("---")
+
+        # ========== API配置区域结束 ==========
+
         st.markdown("### 📤 上传文件")
         st.markdown("---")
 
@@ -838,7 +924,7 @@ def show_screening_tab():
         st.markdown("---")
 
         # 判断是否可以开始（有JD文件 或 选了模板）
-        can_start = resume_files and (jd_file or selected_template)
+        can_start = llm_client.is_configured() and resume_files and (jd_file or selected_template)
 
         # 开始按钮
         start_button = st.button(
