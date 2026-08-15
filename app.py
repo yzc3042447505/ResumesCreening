@@ -2039,12 +2039,19 @@ if __name__ == "__main__":
     import sys
     import os
 
-    # 用环境变量防止递归调用
-    if os.environ.get("STREAMLIT_LAUNCHED") == "1":
-        # 已经由streamlit启动，直接运行主程序
+    # 判断是否已经在Streamlit环境中
+    # Streamlit Cloud / streamlit run 会设置这些环境变量
+    in_streamlit = (
+        os.environ.get("STREAMLIT_LAUNCHED") == "1"
+        or os.environ.get("STREAMLIT_SERVER_PORT") is not None
+        or os.environ.get("IS_STREAMLIT") == "1"
+    )
+
+    if in_streamlit:
+        # 已经在Streamlit环境中，直接运行主程序
         main()
     else:
-        # 第一次运行，启动streamlit
+        # 本地直接运行 python app.py，自动启动streamlit
         current_file = os.path.abspath(__file__)
         current_dir = os.path.dirname(current_file)
 
